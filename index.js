@@ -24,12 +24,45 @@ if (!CARD_API_URL) {
 // Extract base URL from CARD_API_URL for tier list endpoint
 const TIER_LIST_API_URL = CARD_API_URL ? CARD_API_URL.replace(/\/api\/v1\/run\/[^\/]+$/, '/api/v1/run/73e5bea7-52d6-4a76-8db9-4d499a3430f9') : null;
 
+// Autocomplete cache to reduce CPU usage on Render
+const autocompleteCache = new Map();
+const CACHE_TTL = 60000; // 1 minute cache
+const MAX_CACHE_SIZE = 100; // Limit cache size for low RAM
+
+function getCachedSuggestions(query) {
+  const cached = autocompleteCache.get(query);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.suggestions;
+  }
+  return null;
+}
+
+function setCachedSuggestions(query, suggestions) {
+  // Prevent cache from growing too large
+  if (autocompleteCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = autocompleteCache.keys().next().value;
+    autocompleteCache.delete(firstKey);
+  }
+  autocompleteCache.set(query, {
+    suggestions,
+    timestamp: Date.now()
+  });
+}
+
 client.on('interactionCreate', async (interaction) => {
   // --- Autocomplete Handler ---
   if (interaction.isAutocomplete()) {
     try {
       const focusedValue = interaction.options.getFocused();
-      const suggestions = getCardAutocompleteSuggestions(focusedValue);
+      
+      // Check cache first (reduces CPU load)
+      let suggestions = getCachedSuggestions(focusedValue);
+      
+      if (!suggestions) {
+        // Not in cache, compute suggestions
+        suggestions = getCardAutocompleteSuggestions(focusedValue);
+        setCachedSuggestions(focusedValue, suggestions);
+      }
       
       // Check if interaction is still valid before responding
       if (!interaction.responded && !interaction.deferred) {

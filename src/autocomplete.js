@@ -15,16 +15,26 @@ const data = {
   }
 };
 
+// Optimized Fuse.js settings for low resource environment
 const cardFuse = new Fuse([], {
   includeScore: true,
-  threshold: 0.4, // Adjust for more/less strict matching
-  keys: ['name'] // Search only in name field
+  threshold: 0.4,
+  keys: ['name'],
+  // Performance optimizations for Render
+  ignoreLocation: true, // Skip location scoring (faster)
+  minMatchCharLength: 2, // Require at least 2 chars to match
+  shouldSort: true,
+  distance: 100 // Limit distance calculation
 });
 
 const archetypeFuse = new Fuse([], {
   includeScore: true,
   threshold: 0.4,
-  keys: ['name'] // Search in name field for archetypes (normalize to same shape as cards)
+  keys: ['name'],
+  ignoreLocation: true,
+  minMatchCharLength: 2,
+  shouldSort: true,
+  distance: 100
 });
 
 function loadCSVData(filePath, dataType) {
@@ -123,23 +133,51 @@ function updateArchetypeCache(record) {
 }
 
 function getCardAutocompleteSuggestions(query) {
-  if (!query) return [];
-  const results = cardFuse.search(query);
-  // Return the top 7 matches, formatted for Discord's autocomplete
-  return results.slice(0, 7).map(result => ({
-    name: result.item.name,
-    value: result.item.name
-  }));
+  if (!query || query.length < 2) return []; // Skip very short queries
+  
+  try {
+    // Use timeout to prevent long-running searches on slow CPU
+    const startTime = Date.now();
+    const results = cardFuse.search(query);
+    const elapsed = Date.now() - startTime;
+    
+    // Log slow searches for monitoring
+    if (elapsed > 100) {
+      console.warn(`Slow autocomplete search: ${elapsed}ms for "${query}"`);
+    }
+    
+    // Return top 7 matches (Discord limit is 25, but fewer = faster)
+    return results.slice(0, 7).map(result => ({
+      name: result.item.name.substring(0, 100), // Discord limit
+      value: result.item.name.substring(0, 100)
+    }));
+  } catch (error) {
+    console.error('Autocomplete error:', error);
+    return [];
+  }
 }
 
 function getArchetypeAutocompleteSuggestions(query) {
-  if (!query) return [];
-  const results = archetypeFuse.search(query);
-  // Return the top 5 matches, formatted for Discord's autocomplete
-  return results.slice(0, 5).map(result => ({
-    name: result.item.name,
-    value: result.item.name
-  }));
+  if (!query || query.length < 2) return [];
+  
+  try {
+    const startTime = Date.now();
+    const results = archetypeFuse.search(query);
+    const elapsed = Date.now() - startTime;
+    
+    if (elapsed > 100) {
+      console.warn(`Slow archetype autocomplete: ${elapsed}ms for "${query}"`);
+    }
+    
+    // Return top 5 matches for archetypes
+    return results.slice(0, 5).map(result => ({
+      name: result.item.name.substring(0, 100),
+      value: result.item.name.substring(0, 100)
+    }));
+  } catch (error) {
+    console.error('Archetype autocomplete error:', error);
+    return [];
+  }
 }
 
 module.exports = {
