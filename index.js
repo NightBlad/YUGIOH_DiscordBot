@@ -27,9 +27,25 @@ const TIER_LIST_API_URL = CARD_API_URL ? CARD_API_URL.replace(/\/api\/v1\/run\/[
 client.on('interactionCreate', async (interaction) => {
   // --- Autocomplete Handler ---
   if (interaction.isAutocomplete()) {
-    const focusedValue = interaction.options.getFocused();
-    const suggestions = getCardAutocompleteSuggestions(focusedValue);
-    await interaction.respond(suggestions);
+    try {
+      const focusedValue = interaction.options.getFocused();
+      const suggestions = getCardAutocompleteSuggestions(focusedValue);
+      
+      // Check if interaction is still valid before responding
+      if (!interaction.responded && !interaction.deferred) {
+        await interaction.respond(suggestions).catch(err => {
+          // Ignore "Unknown interaction" errors (interaction expired)
+          if (err.code !== 10062) {
+            console.error('Autocomplete error:', err);
+          }
+        });
+      }
+    } catch (err) {
+      // Silently ignore autocomplete errors to prevent crashes
+      if (err.code !== 10062) {
+        console.error('Autocomplete handler error:', err.message);
+      }
+    }
     return;
   }
 
@@ -118,6 +134,16 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.editReply(`Sorry, I could not process your /${commandName} request.`);
     }
   }
+});
+
+// Add global error handler to prevent crashes
+process.on('unhandledRejection', (error) => {
+  // Ignore Discord interaction timeout errors
+  if (error.code === 10062 || error.message?.includes('Unknown interaction')) {
+    console.log('Autocomplete timeout (ignored)');
+    return;
+  }
+  console.error('Unhandled rejection:', error);
 });
 
 // Log in using token from environment variables
