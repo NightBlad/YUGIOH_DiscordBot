@@ -214,11 +214,15 @@ function buildEmbedForCard(normalizedCard, fallbackCard) {
   const fullText = sanitizeText((normalizedCard && normalizedCard.desc) || fallbackCard.desc || fallbackCard.card_text || fallbackCard.text || '');
   if (fullText) {
     const MAX_FIELD = 1024;
+    // Reduce limits to ensure total embed size stays under 6000 chars
+    // With title, fields, and footer, we need to be conservative
     if (fullText.length <= MAX_FIELD) embed.addFields({ name: 'Card Text', value: fullText });
-    else if (fullText.length <= 4000) embed.setDescription(fullText.slice(0, 4096));
+    else if (fullText.length <= 2000) embed.setDescription(fullText.slice(0, 2000)); // Reduced from 4096
     else embed.addFields({ name: 'Card Text (truncated)', value: truncate(fullText, 1024) });
   }
-  return embed;
+  
+  // Ensure the final embed doesn't exceed Discord's 6000 char limit
+  return ensureEmbedSize(embed);
 }
 
 function isPokemonLike(obj) {
@@ -270,11 +274,13 @@ function buildPokemonEmbed(normalizedCard, fallbackCard) {
       { name: 'Weight', value: weight || '—', inline: true }
     );
 
-  if (desc) embed.setDescription(truncate(desc, 4096));
+  if (desc) embed.setDescription(truncate(desc, 2000)); // Reduced from 4096 to stay under 6000 total
   // if we have a larger image separate from thumbnail, set it as image
   const largeImage = (c.card_images && c.card_images[0] && (c.card_images[0].image_url || c.card_images[0].image_url_cropped)) || c.image_url || null;
   if (largeImage) embed.setImage(largeImage);
-  return embed;
+  
+  // Ensure the final embed doesn't exceed Discord's 6000 char limit
+  return ensureEmbedSize(embed);
 }
 
 function parseMarkdownCardsFromText(text) {
@@ -560,6 +566,70 @@ async function processApiResult(apiResult, replyMsg, message) {
   }
 }
 
+/**
+ * Calculate total character count in an embed
+ * @param {Object} embed - Discord embed object
+ * @returns {number} Total character count
+ */
+function calculateEmbedSize(embed) {
+  let total = 0;
+  const data = embed.data || embed;
+  
+  if (data.title) total += data.title.length;
+  if (data.description) total += data.description.length;
+  if (data.footer && data.footer.text) total += data.footer.text.length;
+  if (data.author && data.author.name) total += data.author.name.length;
+  
+  if (data.fields && Array.isArray(data.fields)) {
+    data.fields.forEach(field => {
+      if (field.name) total += field.name.length;
+      if (field.value) total += field.value.length;
+    });
+  }
+  
+  return total;
+}
+
+/**
+ * Ensure embed doesn't exceed Discord's 6000 character limit
+ * @param {Object} embed - Discord embed object
+ * @returns {Object} Validated embed
+ */
+function ensureEmbedSize(embed) {
+  const MAX_EMBED_SIZE = 6000;
+  const SAFETY_MARGIN = 200;
+  const TARGET_SIZE = MAX_EMBED_SIZE - SAFETY_MARGIN;
+  
+  const currentSize = calculateEmbedSize(embed);
+  
+  if (currentSize <= TARGET_SIZE) {
+    return embed;
+  }
+  
+  // If over limit, try to truncate description first
+  const data = embed.data || embed;
+  
+  if (data.description && data.description.length > 1000) {
+    data.description = truncate(data.description, 1000);
+  }
+  
+  // If still too large, remove fields from the end
+  if (calculateEmbedSize(embed) > TARGET_SIZE && data.fields && data.fields.length > 3) {
+    while (calculateEmbedSize(embed) > TARGET_SIZE && data.fields.length > 3) {
+      data.fields.pop();
+    }
+    // Add truncation notice
+    if (data.fields.length > 0) {
+      const lastField = data.fields[data.fields.length - 1];
+      if (!lastField.value.includes('truncated')) {
+        lastField.value += '\n_[Some fields removed due to size limits]_';
+      }
+    }
+  }
+  
+  return embed;
+}
+
 module.exports = {
   extractCardInfo,
   extractCards,
@@ -570,4 +640,6 @@ module.exports = {
   parseMarkdownCardsFromText,
   processApiResult,
   truncate,
+  calculateEmbedSize,
+  ensureEmbedSize,
 };
