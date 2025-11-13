@@ -121,6 +121,80 @@ Total Users: ${status.totalUsers}
     return;
   }
 
+  // Handle art command - fetch card image from MongoDB API
+  if (commandName === 'art') {
+    const cardName = interaction.options.getString('query');
+    const imageSize = interaction.options.getString('size') || 'full'; // Default to full size
+    await interaction.deferReply();
+    
+    try {
+      const axios = require('axios');
+      const mongoApiUrl = process.env.MONGODB_API_URL || 'http://localhost:3000';
+      
+      // Use optimized /art endpoint
+      const response = await axios.get(`${mongoApiUrl}/art`, {
+        params: { name: cardName }
+      });
+      
+      if (!response.data) {
+        await interaction.editReply(`❌ Could not find card: **${cardName}**`);
+        return;
+      }
+      
+      const card = response.data;
+      
+      // Select image based on size option
+      let imageUrl = card.images.full; // Default
+      let sizeLabel = 'Full Quality';
+      
+      if (imageSize === 'small') {
+        imageUrl = card.images.small;
+        sizeLabel = 'Small';
+      } else if (imageSize === 'cropped') {
+        imageUrl = card.images.cropped;
+        sizeLabel = 'Cropped Art';
+      }
+      
+      // Build embed with card art
+      const { EmbedBuilder } = require('discord.js');
+      const embed = new EmbedBuilder()
+        .setTitle(`🎨 ${card.name}`)
+        .setImage(imageUrl)
+        .setColor(0x2f3136);
+      
+      // Add card info
+      let footerText = card.type || '';
+      if (footerText) {
+        footerText += ` • ${sizeLabel}`;
+      } else {
+        footerText = sizeLabel;
+      }
+      embed.setFooter({ text: footerText });
+      
+      if (card.id) {
+        embed.setDescription(`**Card ID:** ${card.id}`);
+      }
+      
+      await interaction.editReply({ embeds: [embed] });
+      
+    } catch (err) {
+      console.error('Error fetching card art:', err);
+      
+      let errorMessage = `❌ Could not fetch artwork for: **${cardName}**`;
+      
+      if (err.response?.status === 404) {
+        errorMessage = `❌ Card not found: **${cardName}**\nTip: Make sure you use the exact card name.`;
+      } else if (err.response?.data?.error) {
+        errorMessage = `❌ ${err.response.data.error}`;
+      } else if (err.code === 'ECONNREFUSED') {
+        errorMessage = `❌ MongoDB API is not available. Please contact an administrator.`;
+      }
+      
+      await interaction.editReply(errorMessage);
+    }
+    return;
+  }
+
   if (commandName === 'card' || commandName === 'archetype' || commandName === 'pokemon' || commandName === 'tierlist') {
     // Check permissions for tierlist command
     if (commandName === 'tierlist') {

@@ -36,6 +36,24 @@ const commands = [
     description: 'Check bot server status and queue (Admin only).',
     options: [],
   },
+  {
+    name: 'art',
+    description: 'Get card artwork/image.',
+    options: [
+      { name: 'query', type: 3 /* STRING */, description: 'The card name', required: true, autocomplete: true },
+      { 
+        name: 'size', 
+        type: 3 /* STRING */, 
+        description: 'Image size (default: full)', 
+        required: false,
+        choices: [
+          { name: 'Full - High Quality', value: 'full' },
+          { name: 'Small - Medium Quality', value: 'small' },
+          { name: 'Cropped - Card Art Only', value: 'cropped' }
+        ]
+      }
+    ],
+  },
 ];
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);

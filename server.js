@@ -127,6 +127,83 @@ connectToMongo().then(() => {
     }
   });
 
+  // Card Art endpoint - optimized for fast image lookup
+  app.get('/art', async (req, res) => {
+    try {
+      const cardName = req.query.name || req.query.q;
+      
+      if (!cardName) {
+        return res.status(400).json({ 
+          error: 'Missing required parameter: name or q' 
+        });
+      }
+
+      // Escape regex special characters
+      function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+
+      // Search for card by name (case-insensitive)
+      const filter = {
+        name: { $regex: `^${escapeRegExp(cardName)}$`, $options: 'i' }
+      };
+
+      // Only fetch necessary fields for performance
+      const projection = {
+        name: 1,
+        id: 1,
+        card_images: 1,
+        type: 1,
+        humanReadableCardType: 1
+      };
+
+      const card = await cards.findOne(filter, { projection });
+
+      if (!card) {
+        return res.status(404).json({ 
+          error: 'Card not found',
+          query: cardName 
+        });
+      }
+
+      // Parse card_images if it's a stringified JSON
+      let cardImages = card.card_images;
+      if (typeof cardImages === 'string') {
+        try {
+          cardImages = JSON.parse(cardImages);
+        } catch (e) {
+          cardImages = [];
+        }
+      }
+
+      // Extract image URLs
+      const imageData = (cardImages && cardImages[0]) ? cardImages[0] : null;
+      
+      if (!imageData || !imageData.image_url) {
+        return res.status(404).json({ 
+          error: 'No artwork available for this card',
+          card: card.name 
+        });
+      }
+
+      // Return image URLs and card info
+      res.json({
+        name: card.name,
+        id: card.id,
+        type: card.type || card.humanReadableCardType,
+        images: {
+          full: imageData.image_url,
+          small: imageData.image_url_small || imageData.image_url,
+          cropped: imageData.image_url_cropped || imageData.image_url
+        }
+      });
+
+    } catch (err) {
+      console.error('Art API error:', err);
+      res.status(500).json({ error: 'Failed to fetch card artwork' });
+    }
+  });
+
   // Get one card by id (string _id)
   app.get('/cards/:id', async (req, res) => {
     try {
