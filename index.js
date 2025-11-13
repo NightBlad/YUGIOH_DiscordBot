@@ -8,6 +8,7 @@ const { getCardAutocompleteSuggestions, loadData } = require('./src/autocomplete
 const { callCardApi } = require('./src/api');
 const { processApiResult } = require('./src/cardUtils');
 const { extractPokemonInfo, buildPokemonEmbed, normalizePokemon, getPokemonEmbedFromApiResult } = require('./src/pokemonUtils');
+const requestQueue = require('./src/requestQueue');
 
 // Load cards data from CSV files
 loadData();
@@ -87,6 +88,39 @@ client.on('interactionCreate', async (interaction) => {
 
   const { commandName } = interaction;
 
+  // Handle status command
+  if (commandName === 'status') {
+    const member = interaction.member;
+    const isAdmin = member && (member.permissions.has('Administrator') || member.permissions.has('ManageGuild'));
+    
+    if (!isAdmin) {
+      await interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+      return;
+    }
+    
+    const status = requestQueue.getStatus();
+    const uptime = process.uptime();
+    const memUsage = process.memoryUsage();
+    
+    const statusMessage = `
+**🤖 Bot Status**
+\`\`\`
+Uptime: ${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s
+Memory: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memUsage.heapTotal / 1024 / 1024)}MB
+\`\`\`
+
+**📊 Request Queue**
+\`\`\`
+Active Requests: ${status.activeRequests} / ${status.maxConcurrent}
+Queued Requests: ${status.queuedRequests}
+Total Users: ${status.totalUsers}
+\`\`\`
+    `.trim();
+    
+    await interaction.reply({ content: statusMessage, ephemeral: true });
+    return;
+  }
+
   if (commandName === 'card' || commandName === 'archetype' || commandName === 'pokemon' || commandName === 'tierlist') {
     // Check permissions for tierlist command
     if (commandName === 'tierlist') {
@@ -134,15 +168,22 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     try {
-      const apiResult = await callCardApi({
-        userId: interaction.user.id,
-        username: interaction.user.username,
-        content: query,
-        apiUrl: apiUrl,
-      });
+      // Use request queue for API calls to handle concurrent users
+      const apiResult = await requestQueue.enqueue(
+        interaction.user.id,
+        interaction.user.username,
+        async () => {
+          return await callCardApi({
+            userId: interaction.user.id,
+            username: interaction.user.username,
+            content: query,
+            apiUrl: apiUrl,
+          });
+        }
+      );
 
-        // Use Pokemon-specific handling for Pokemon command
-        if (commandName === 'pokemon') {
+      // Use Pokemon-specific handling for Pokemon command
+      if (commandName === 'pokemon') {
           // console.log('=== RAW API RESULT ===');
           // console.log(JSON.stringify(apiResult, null, 2));
           // console.log('=== END RAW API RESULT ===');
@@ -164,7 +205,19 @@ client.on('interactionCreate', async (interaction) => {
         }
     } catch (err) {
       console.error(`Error calling ${apiName} API:`, err);
-      await interaction.editReply(`Sorry, I could not process your /${commandName} request.`);
+      
+      // Provide user-friendly error messages
+      let errorMessage = `Sorry, I could not process your /${commandName} request.`;
+      
+      if (err.message.includes('Rate limit exceeded')) {
+        errorMessage = `⏱️ ${err.message}`;
+      } else if (err.message.includes('Server is busy')) {
+        errorMessage = `🔄 ${err.message}`;
+      } else if (err.message.includes('timeout')) {
+        errorMessage = `⏱️ Request timed out. The server might be busy. Please try again.`;
+      }
+      
+      await interaction.editReply(errorMessage);
     }
   }
 });

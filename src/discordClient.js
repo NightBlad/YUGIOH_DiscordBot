@@ -31,6 +31,11 @@ const commands = [
     description: 'Get the current Yu-Gi-Oh! tier list.',
     options: [],
   },
+  {
+    name: 'status',
+    description: 'Check bot server status and queue (Admin only).',
+    options: [],
+  },
 ];
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
