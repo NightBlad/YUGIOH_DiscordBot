@@ -29,62 +29,61 @@ function calculateEmbedSize(embed) {
  * @returns {Object} Truncated embed
  */
 function ensureEmbedSize(embed, truncate) {
-  const MAX_EMBED_SIZE = 6000;
-  const SAFETY_MARGIN = 200; // Leave some room for safety
-  const TARGET_SIZE = MAX_EMBED_SIZE - SAFETY_MARGIN;
-  
+  const TARGET_SIZE = 5800; // Discord's max is 6000, this provides a safety margin.
   let currentSize = calculateEmbedSize(embed);
-  
+
   if (currentSize <= TARGET_SIZE) {
     return embed; // No truncation needed
   }
-  
+
   const data = embed.data || embed;
-  
+  const truncateFn = (text, len) => (typeof truncate === 'function' ? truncate(text, len) : text.slice(0, len) + '...');
+
   // Step 1: Truncate description first (most common large field)
-  if (data.description && data.description.length > 800) {
-    data.description = typeof truncate === 'function' 
-      ? truncate(data.description, 800) 
-      : data.description.slice(0, 800) + '...';
-    currentSize = calculateEmbedSize(embed);
+  if (data.description) {
+    const originalLength = data.description.length;
+    const excess = currentSize - TARGET_SIZE;
+    const newLength = Math.max(0, originalLength - excess);
+
+    if (newLength < originalLength) {
+      data.description = truncateFn(data.description, newLength);
+      currentSize -= (originalLength - data.description.length);
+    }
   }
-  
+
   if (currentSize <= TARGET_SIZE) {
     return embed;
   }
-  
+
   // Step 2: Truncate field values
   if (data.fields && Array.isArray(data.fields)) {
     for (let field of data.fields) {
-      if (field.value && field.value.length > 500) {
-        field.value = typeof truncate === 'function'
-          ? truncate(field.value, 500)
-          : field.value.slice(0, 500) + '...';
+      if (currentSize <= TARGET_SIZE) break; // Stop if we are already small enough
+      if (field.value) {
+        const originalLength = field.value.length;
+        const excess = currentSize - TARGET_SIZE;
+        const newLength = Math.max(0, originalLength - excess);
+        
+        if (newLength < originalLength) {
+          field.value = truncateFn(field.value, newLength);
+          currentSize -= (originalLength - field.value.length);
+        }
       }
     }
-    currentSize = calculateEmbedSize(embed);
   }
-  
+
   if (currentSize <= TARGET_SIZE) {
     return embed;
   }
-  
+
   // Step 3: Remove fields from the end until we fit
   if (data.fields && Array.isArray(data.fields)) {
-    while (currentSize > TARGET_SIZE && data.fields.length > 2) {
-      data.fields.pop();
-      currentSize = calculateEmbedSize(embed);
-    }
-    
-    // Add indication that content was truncated
-    if (data.fields.length > 0) {
-      const lastField = data.fields[data.fields.length - 1];
-      if (!lastField.value.includes('truncated')) {
-        lastField.value += '\n\n_[Content truncated due to size limits]_';
-      }
+    while (currentSize > TARGET_SIZE && data.fields.length > 0) {
+      const removedField = data.fields.pop();
+      currentSize -= ((removedField.name?.length || 0) + (removedField.value?.length || 0));
     }
   }
-  
+
   return embed;
 }
 
@@ -169,22 +168,26 @@ async function renderMultipleCards(cards, replyMsg, message, options = {}) {
  * @returns {Array} Safe batch of embeds
  */
 function ensureBatchSize(embeds, truncate) {
+  const MAX_TOTAL_EMBED_SIZE = 6000;
   const MAX_BATCH_SIZE = 10; // Discord allows max 10 embeds per message
   
-  if (embeds.length > MAX_BATCH_SIZE) {
-    return embeds.slice(0, MAX_BATCH_SIZE);
-  }
+  let safeBatch = embeds.length > MAX_BATCH_SIZE ? embeds.slice(0, MAX_BATCH_SIZE) : [...embeds];
   
-  // Calculate total size of all embeds in batch
-  let totalSize = 0;
-  for (let embed of embeds) {
-    totalSize += calculateEmbedSize(embed);
+  // Calculate total size of all embeds in batch and remove embeds from the end if the total is too large.
+  let totalSize = safeBatch.reduce((sum, embed) => sum + calculateEmbedSize(embed), 0);
+
+  while (totalSize > MAX_TOTAL_EMBED_SIZE && safeBatch.length > 1) {
+    safeBatch.pop(); // Remove the last embed
+    totalSize = safeBatch.reduce((sum, embed) => sum + calculateEmbedSize(embed), 0);
   }
-  
-  // If total is reasonable, return as is
-  // Note: Each embed is already limited to ~5800 chars, so 10 embeds could be 58000 total
-  // Discord's message limit is higher than embed limit, but we want to be safe
-  return embeds;
+
+  // If even a single embed is too large (which shouldn't happen if ensureEmbedSize works),
+  // we might still send it and let Discord handle the error, or truncate it further here.
+  if (safeBatch.length === 1 && totalSize > MAX_TOTAL_EMBED_SIZE) {
+    safeBatch[0] = ensureEmbedSize(safeBatch[0], truncate);
+  }
+
+  return safeBatch;
 }
 
 module.exports = {
