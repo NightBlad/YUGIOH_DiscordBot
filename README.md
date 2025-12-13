@@ -206,7 +206,6 @@ Generate invite link with required permissions:
 https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_CLIENT_ID&permissions=277025508416&scope=bot%20applications.commands
 ```
 
-## Development
 
 ### Adding New Commands
 
