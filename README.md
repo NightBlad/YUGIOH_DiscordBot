@@ -4,20 +4,31 @@ A Discord bot for Yu-Gi-Oh card queries with integrated MongoDB API server for c
 
 ## Features
 
-### Discord Bot
-- `/card <query>` - Search for Yu-Gi-Oh cards
+### Discord Bot Commands
+- `/card <query>` - Search for Yu-Gi-Oh cards by exact name
 - `/archetype <query>` - Search for card archetypes
 - `/pokemon <query>` - Search for Pokemon information
+- `/search <query>` - **NEW!** Semantic search powered by LangFlow AI
+- `/art <query> [size]` - Get card artwork with size options (full/small/cropped)
 - `/tierlist` - View tier list (Admin/Moderator only)
+- `/status` - Check bot status and queue (Admin only)
 - Autocomplete support for card names
 - Multi-card rendering with pagination
-- MongoDB integration for card data
+- Request queue system for concurrent users
+- Per-user rate limiting (5 requests/minute)
 
 ### MongoDB API
 - RESTful API for card data management
 - YGOPRODECK-compatible endpoints
 - Advanced filtering and search capabilities
+- Fast card artwork retrieval endpoint
 - CRUD operations for card collection
+
+### LangFlow Integration
+- **Semantic search** using LangFlow AI for intelligent card discovery
+- Natural language queries (e.g., "cards that destroy all monsters")
+- Context-aware search across card effects and descriptions
+- Powered by LangFlow's advanced NLP capabilities
 
 ## Setup
 
@@ -118,9 +129,9 @@ DiscordBot/
 - **POST** `/cards` - Insert card(s) (JSON body)
 - **DELETE** `/cards` - Delete all cards ⚠️
 
-### Card Search (YGOPRODECK-compatible)
+### Card Search
 
-**GET** `/cardinfo` - Advanced card filtering
+**GET** `/cardinfo` - Advanced card filtering (YGOPRODECK-compatible)
 
 Query Parameters:
 - `name` - Exact name match
@@ -136,6 +147,13 @@ Query Parameters:
 - `sort` - Sort field (name, atk, def, level)
 - `limit` - Result limit
 
+**GET** `/art` - Fast card artwork retrieval
+
+Query Parameters:
+- `name` or `q` - Card name (required)
+
+Returns card images in full, small, and cropped formats.
+
 **Examples:**
 
 ```bash
@@ -147,6 +165,9 @@ GET /cardinfo?name=Dark%20Magician
 
 # Fuzzy search
 GET /cardinfo?fname=Magician
+
+# Get card artwork
+GET /art?name=Blue-Eyes%20White%20Dragon
 
 # Archetype search
 GET /cardinfo?archetype=Blue-Eyes

@@ -54,6 +54,21 @@ const commands = [
       }
     ],
   },
+  {
+    name: 'search',
+    description: 'Smart semantic search for cards by description, effect, or attributes.',
+    options: [
+      { name: 'query', type: 3 /* STRING */, description: 'Search query (e.g., "destroy all monsters", "draw cards", "dark warrior")', required: true },
+      { 
+        name: 'limit', 
+        type: 4 /* INTEGER */, 
+        description: 'Number of results (default: 5, max: 10)', 
+        required: false,
+        min_value: 1,
+        max_value: 10
+      }
+    ],
+  },
 ];
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);

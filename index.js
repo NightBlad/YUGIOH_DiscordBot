@@ -195,6 +195,70 @@ Total Users: ${status.totalUsers}
     return;
   }
 
+  // Handle search command - semantic search using LangFlow API
+  if (commandName === 'search') {
+    const query = interaction.options.getString('query');
+    const limit = interaction.options.getInteger('limit') || 5;
+    await interaction.deferReply();
+    
+    try {
+      const searchApiUrl = process.env.SEARCH_API_URL;
+      
+      if (!searchApiUrl) {
+        await interaction.editReply('❌ Search API is not configured. Please contact an administrator.');
+        return;
+      }
+      
+      // Call LangFlow search API through request queue
+      const apiResult = await requestQueue.enqueue(
+        interaction.user.id,
+        () => callCardApi(searchApiUrl, query)
+      );
+      
+      // Process result using existing card utilities
+      const { processApiResult } = require('./src/cardUtils');
+      
+      // Create reply adapter for processApiResult
+      const replyAdapter = {
+        edit: (data) => {
+          // Add search context to the response
+          if (typeof data === 'string') {
+            return interaction.editReply(`🔍 **Search:** ${query}\n\n${data}`);
+          } else if (data && data.embeds) {
+            // Add header with search info
+            const embedCount = data.embeds.length;
+            const header = embedCount === 1
+              ? `🔍 Found **1** card matching: **${query}**`
+              : `🔍 Found **${embedCount}** cards matching: **${query}**`;
+            return interaction.editReply({ content: header, embeds: data.embeds });
+          }
+          return interaction.editReply(data);
+        },
+        channel: interaction.channel
+      };
+      
+      await processApiResult(apiResult, replyAdapter, interaction);
+      
+    } catch (err) {
+      console.error('Error performing semantic search:', err);
+      
+      let errorMessage = `❌ Could not search for: **${query}**`;
+      
+      if (err.message.includes('Rate limit exceeded')) {
+        errorMessage = `⏱️ ${err.message}`;
+      } else if (err.message.includes('Server is busy')) {
+        errorMessage = `🔄 ${err.message}`;
+      } else if (err.message.includes('timeout')) {
+        errorMessage = `⏱️ Request timed out. The server might be busy. Please try again.`;
+      } else if (err.code === 'ECONNREFUSED') {
+        errorMessage = `❌ Search service is not available. Please contact an administrator.`;
+      }
+      
+      await interaction.editReply(errorMessage);
+    }
+    return;
+  }
+
   if (commandName === 'card' || commandName === 'archetype' || commandName === 'pokemon' || commandName === 'tierlist') {
     // Check permissions for tierlist command
     if (commandName === 'tierlist') {
