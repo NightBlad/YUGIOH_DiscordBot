@@ -212,6 +212,7 @@ Total Users: ${status.totalUsers}
       // Call LangFlow search API through request queue
       const apiResult = await requestQueue.enqueue(
         interaction.user.id,
+        interaction.user.username,
         () => callCardApi(searchApiUrl, query)
       );
       
