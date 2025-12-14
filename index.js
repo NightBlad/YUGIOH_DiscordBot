@@ -213,7 +213,14 @@ Total Users: ${status.totalUsers}
       const apiResult = await requestQueue.enqueue(
         interaction.user.id,
         interaction.user.username,
-        () => callCardApi(searchApiUrl, query)
+        async () => {
+          return await callCardApi({
+            userId: interaction.user.id,
+            username: interaction.user.username,
+            content: query,
+            apiUrl: searchApiUrl,
+          });
+        }
       );
       
       // Process result using existing card utilities
