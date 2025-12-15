@@ -58,10 +58,45 @@ connectToMongo().then(() => {
         }
       };
 
-      if (q.name) {
-        exactCi('name', q.name);
+      // escape regex helper - moved to top to be accessible
+      function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       }
-  if (q.fname) addFuzzy('name', q.fname);
+
+      // Helper to normalize and clean search strings (handles special chars)
+      function normalizeSearchString(str) {
+        // Trim whitespace
+        let normalized = str.trim();
+        // Replace multiple spaces with single space
+        normalized = normalized.replace(/\s+/g, ' ');
+        // Remove trailing/leading special chars that might come from URL issues
+        normalized = normalized.replace(/^[\s&]+|[\s&]+$/g, '');
+        return normalized;
+      }
+
+      if (q.name) {
+        const searchName = normalizeSearchString(q.name);
+        
+        // Try exact match first
+        exactCi('name', searchName);
+        
+        // If exact match returns nothing, fallback to fuzzy search
+        const exactResults = await cards.find(filter).limit(1).toArray();
+        
+        if (exactResults.length === 0) {
+          // Clear filter and try fuzzy search
+          delete filter.name;
+          // Use flexible regex that handles special characters
+          const fuzzyPattern = searchName
+            .split(/\s+/)
+            .map(word => escapeRegExp(word))
+            .join('.*');
+          filter.name = { $regex: fuzzyPattern, $options: 'i' };
+        }
+      }
+      
+      if (q.fname) addFuzzy('name', q.fname);
+      
       if (q.id) {
         // passcode numeric, can be comma separated
         const ids = q.id.split(',').map(s => parseInt(s.trim(), 10));
@@ -86,18 +121,13 @@ connectToMongo().then(() => {
           filter[field] = parseInt(v, 10);
         }
       });
-  if (q.race) filter.race = { $in: q.race.split(',').map(s => s.trim()).map(r => new RegExp(`^${escapeRegExp(r)}$`, 'i')) };
-  if (q.attribute) filter.attribute = { $in: q.attribute.split(',').map(s => s.trim()).map(a => new RegExp(`^${escapeRegExp(a)}$`, 'i')) };
+      if (q.race) filter.race = { $in: q.race.split(',').map(s => s.trim()).map(r => new RegExp(`^${escapeRegExp(r)}$`, 'i')) };
+      if (q.attribute) filter.attribute = { $in: q.attribute.split(',').map(s => s.trim()).map(a => new RegExp(`^${escapeRegExp(a)}$`, 'i')) };
       if (q.link) filter.linkval = parseInt(q.link, 10);
       if (q.linkmarker) filter.linkmarkers = { $all: q.linkmarker.split(',').map(s => s.trim().toLowerCase()) };
       if (q.scale) filter.scale = parseInt(q.scale, 10);
       if (q.cardset) addFuzzy('card_sets.set_name', q.cardset);
       if (q.archetype) addFuzzy('archetype', q.archetype);
-
-      // escape regex helper
-      function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      }
       if (q.staple) filter.staple = q.staple === 'yes' || q.staple === 'true';
       if (q.has_effect) {
         const v = q.has_effect.toLowerCase();
